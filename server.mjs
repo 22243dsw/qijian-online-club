@@ -25,8 +25,8 @@ function setupBoard(game) {
   const board = Array(90).fill(null)
   ;['車','馬','相','仕','帥','仕','相','馬','車'].forEach((piece, index) => { board[81 + index] = piece })
   ;['车','马','象','士','将','士','象','马','车'].forEach((piece, index) => { board[index] = piece })
-  ;[1, 7].forEach((index) => { board[27 + index * 1] = '炮'; board[62 + index * 1] = '炮' })
-  ;[0, 2, 4, 6, 8].forEach((index) => { board[30 + index] = '兵'; board[59 - index] = '卒' })
+  ;[1, 7].forEach((index) => { board[19 + index] = '炮'; board[64 + index] = '炮' })
+  ;[0, 2, 4, 6, 8].forEach((index) => { board[27 + index] = '卒'; board[54 + index] = '兵' })
   return board
 }
 function makeRoom(name, game, password, createdBy) {
@@ -59,7 +59,11 @@ function validXiangqi(board, from, to, turn) {
   if (target && (turn === 'red' ? redXiangqi.has(target) : blackXiangqi.has(target))) return false
   const kind = xiangqiKind[piece]
   if (kind === '兵') return turn === 'red' ? (dy === -1 && ax === 0) || (fy <= 4 && dy === 0 && ax === 1) : (dy === 1 && ax === 0) || (fy >= 5 && dy === 0 && ax === 1)
-  if (kind === '马') return (ax === 1 && ay === 2) || (ax === 2 && ay === 1)
+  if (kind === '马') {
+    if (!((ax === 1 && ay === 2) || (ax === 2 && ay === 1))) return false
+    const legX = fx + (ax === 2 ? dx / 2 : 0), legY = fy + (ay === 2 ? dy / 2 : 0)
+    return !board[legY * 9 + legX]
+  }
   if (kind === '车') return (dx === 0 || dy === 0) && pathClear(board, fx, fy, tx, ty, 9)
   if (kind === '炮') { const between = []; const sx = Math.sign(dx), sy = Math.sign(dy); let x = fx + sx, y = fy + sy; while (x !== tx || y !== ty) { between.push(board[y * 9 + x]); x += sx; y += sy }; return (dx === 0 || dy === 0) && (target ? between.filter(Boolean).length === 1 : between.filter(Boolean).length === 0) }
   if (kind === '将') return ax + ay === 1 && tx >= 3 && tx <= 5 && (turn === 'red' ? ty >= 7 : ty <= 2)
@@ -67,22 +71,102 @@ function validXiangqi(board, from, to, turn) {
   if (kind === '士') return ax === 1 && ay === 1 && tx >= 3 && tx <= 5 && (turn === 'red' ? ty >= 7 : ty <= 2)
   return false
 }
+function chessKingIndex(board, turn) { return board.findIndex((piece) => piece === (turn === 'red' ? 'K' : 'k')) }
+function chessAttacked(board, target, byTurn) {
+  const tx = target % 8, ty = Math.floor(target / 8)
+  return board.some((piece, index) => {
+    if (!piece || (byTurn === 'red' ? piece !== piece.toUpperCase() : piece !== piece.toLowerCase())) return false
+    const fx = index % 8, fy = Math.floor(index / 8), dx = tx - fx, dy = ty - fy, ax = Math.abs(dx), ay = Math.abs(dy), kind = piece.toLowerCase()
+    if (kind === 'p') return byTurn === 'red' ? dy === -1 && ax === 1 : dy === 1 && ax === 1
+    if (kind === 'n') return (ax === 1 && ay === 2) || (ax === 2 && ay === 1)
+    if (kind === 'k') return ax <= 1 && ay <= 1 && ax + ay > 0
+    if (kind === 'b') return ax === ay && pathClear(board, fx, fy, tx, ty, 8)
+    if (kind === 'r') return (dx === 0 || dy === 0) && pathClear(board, fx, fy, tx, ty, 8)
+    return (ax === ay || dx === 0 || dy === 0) && pathClear(board, fx, fy, tx, ty, 8)
+  })
+}
+function xiangqiGeneralIndex(board, turn) { return board.findIndex((piece) => piece === (turn === 'red' ? '帥' : '将')) }
+function xiangqiInCheck(board, turn) {
+  const king = xiangqiGeneralIndex(board, turn)
+  if (king < 0) return true
+  const enemy = turn === 'red' ? 'black' : 'red'
+  const kx = king % 9, ky = Math.floor(king / 9), enemyKing = xiangqiGeneralIndex(board, enemy)
+  if (enemyKing >= 0 && enemyKing % 9 === kx && pathClear(board, kx, ky, enemyKing % 9, Math.floor(enemyKing / 9), 9)) return true
+  return board.some((piece, index) => {
+    if (!piece || (enemy === 'red' ? !redXiangqi.has(piece) : !blackXiangqi.has(piece))) return false
+    return validXiangqi(board, index, king, enemy)
+  })
+}
+function legalChessMove(board, from, to, turn) {
+  if (!validChess(board, from, to, turn)) return false
+  const next = [...board]
+  next[to] = next[from]
+  next[from] = null
+  const king = chessKingIndex(next, turn)
+  return king >= 0 && !chessAttacked(next, king, turn === 'red' ? 'black' : 'red')
+}
+function legalXiangqiMove(board, from, to, turn) {
+  if (!validXiangqi(board, from, to, turn)) return false
+  const next = [...board]
+  next[to] = next[from]
+  next[from] = null
+  return !xiangqiInCheck(next, turn)
+}
 const neighbors = (index, size) => { const x = index % size, y = Math.floor(index / size); return [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([nx, ny]) => nx >= 0 && nx < size && ny >= 0 && ny < size).map(([nx, ny]) => ny * size + nx) }
 function group(board, start, size) { const color = board[start], found = new Set([start]), stack = [start]; while (stack.length) for (const next of neighbors(stack.pop(), size)) if (board[next] === color && !found.has(next)) { found.add(next); stack.push(next) }; return found }
 function hasLiberty(board, stones, size) { return [...stones].some((stone) => neighbors(stone, size).some((next) => !board[next])) }
 function validGo(room, index) { return index >= 0 && index < 361 && !room.board[index] }
-function applyGo(room, index) { if (!validGo(room, index)) return false; const color = room.turn === 'red' ? 'black' : 'white'; room.board[index] = color; for (const next of neighbors(index, 19)) if (room.board[next] && room.board[next] !== color) { const enemy = group(room.board, next, 19); if (!hasLiberty(room.board, enemy, 19)) for (const stone of enemy) room.board[stone] = null }; const own = group(room.board, index, 19); if (!hasLiberty(room.board, own, 19)) { room.board[index] = null; return false }; room.turn = room.turn === 'red' ? 'black' : 'red'; return true }
-function applyGomoku(room, index) { const size = 15; if (index < 0 || index >= size * size || room.board[index]) return false; const color = room.turn === 'red' ? 'black' : 'white'; room.board[index] = color; const x = index % size, y = Math.floor(index / size); const directions = [[1, 0], [0, 1], [1, 1], [1, -1]]; room.winner = directions.some(([dx, dy]) => { let count = 1; for (const sign of [-1, 1]) { let nx = x + dx * sign, ny = y + dy * sign; while (nx >= 0 && nx < size && ny >= 0 && ny < size && room.board[ny * size + nx] === color) { count += 1; nx += dx * sign; ny += dy * sign } } return count >= 5 }) ? room.turn : ''; room.turn = room.turn === 'red' ? 'black' : 'red'; return true }
+function applyGo(room, index) {
+  if (!validGo(room, index)) return false
+  const color = room.turn === 'red' ? 'black' : 'white'
+  const snapshot = [...room.board]
+  room.board[index] = color
+  for (const next of neighbors(index, 19)) if (room.board[next] && room.board[next] !== color) {
+    const enemy = group(room.board, next, 19)
+    if (!hasLiberty(room.board, enemy, 19)) for (const stone of enemy) room.board[stone] = null
+  }
+  const own = group(room.board, index, 19)
+  if (!hasLiberty(room.board, own, 19)) { room.board = snapshot; return false }
+  room.turn = room.turn === 'red' ? 'black' : 'red'
+  return true
+}
+function applyGomoku(room, index) {
+  const size = 15
+  if (index < 0 || index >= size * size || room.board[index]) return false
+  const color = room.turn === 'red' ? 'black' : 'white'
+  room.board[index] = color
+  const x = index % size, y = Math.floor(index / size), directions = [[1, 0], [0, 1], [1, 1], [1, -1]]
+  room.winner = directions.some(([dx, dy]) => {
+    let count = 1
+    for (const sign of [-1, 1]) { let nx = x + dx * sign, ny = y + dy * sign; while (nx >= 0 && nx < size && ny >= 0 && ny < size && room.board[ny * size + nx] === color) { count += 1; nx += dx * sign; ny += dy * sign } }
+    return count >= 5
+  }) ? room.turn : ''
+  if (!room.winner && room.board.every(Boolean)) room.winner = 'draw'
+  room.turn = room.turn === 'red' ? 'black' : 'red'
+  return true
+}
 function applyMove(room, from, to) {
   if (room.game === '围棋') return applyGo(room, to)
   if (room.game === '五子棋') return applyGomoku(room, to)
-  const valid = room.game === '国际象棋' ? validChess(room.board, from, to, room.turn) : validXiangqi(room.board, from, to, room.turn)
+  const valid = room.game === '国际象棋' ? legalChessMove(room.board, from, to, room.turn) : legalXiangqiMove(room.board, from, to, room.turn)
   if (!valid) return false
-  room.board[to] = room.board[from]; room.board[from] = null; room.turn = room.turn === 'red' ? 'black' : 'red'; return true
+  room.board[to] = room.board[from]; room.board[from] = null
+  if (room.game === '国际象棋' && room.board[to].toLowerCase() === 'p' && Math.floor(to / 8) === (room.turn === 'red' ? 0 : 7)) room.board[to] = room.turn === 'red' ? 'Q' : 'q'
+  room.turn = room.turn === 'red' ? 'black' : 'red'
+  return true
 }
-function roomState(room) { return { room: roomSummary(room), board: room.board, turn: room.turn, messages: room.messages } }
-function broadcastRoom(room) { for (const socket of sockets) if (socket.roomId === room.id) send(socket, 'room_state', roomState(room)) }
+function roomState(room, socket) { return { room: roomSummary(room), board: room.board, turn: room.turn, role: socket ? (room.players.indexOf(socket.username) === 0 ? 'red' : 'black') : '', players: room.players, messages: room.messages } }
+function broadcastRoom(room) { for (const socket of sockets) if (socket.roomId === room.id) send(socket, 'room_state', roomState(room, socket)) }
 function broadcastRooms() { const payload = [...rooms.values()].map(roomSummary); for (const socket of sockets) send(socket, 'rooms', { rooms: payload }) }
+function detachSocket(socket) {
+  if (!socket.roomId) return
+  const room = rooms.get(socket.roomId)
+  socket.roomId = null
+  if (!room) return
+  room.players = room.players.filter((player) => player !== socket.username)
+  broadcastRoom(room)
+  broadcastRooms()
+}
 
 const distRoot = resolve('dist')
 const contentTypes = { '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.html': 'text/html; charset=utf-8' }
@@ -114,13 +198,13 @@ wss.on('connection', (socket) => {
       }
       const username = userFor(socket)
       if (!username) return send(socket, 'error', { message: '请先登录' })
-      if (message.type === 'create_room') { const room = makeRoom(String(message.name || '无名棋局').slice(0, 30), message.game, String(message.password || ''), username); room.players.push(username); socket.roomId = room.id; send(socket, 'room_state', roomState(room)); broadcastRooms(); return }
-      if (message.type === 'join_room') { const room = rooms.get(message.roomId); if (!room) return send(socket, 'error', { message: '房间不存在' }); if (room.passwordHash && room.passwordHash !== digest(String(message.password || ''))) return send(socket, 'error', { message: '房间暗号错误' }); if (!room.players.includes(username)) room.players.push(username); socket.roomId = room.id; send(socket, 'room_state', roomState(room)); broadcastRoom(room); broadcastRooms(); return }
-      if (message.type === 'leave_room') { socket.roomId = null; return }
+      if (message.type === 'create_room') { detachSocket(socket); const room = makeRoom(String(message.name || '无名棋局').slice(0, 30), message.game, String(message.password || ''), username); room.players.push(username); socket.roomId = room.id; send(socket, 'room_state', roomState(room, socket)); broadcastRooms(); return }
+      if (message.type === 'join_room') { const room = rooms.get(message.roomId); if (!room) return send(socket, 'error', { message: '房间不存在' }); if (room.passwordHash && room.passwordHash !== digest(String(message.password || ''))) return send(socket, 'error', { message: '房间暗号错误' }); if (!room.players.includes(username) && room.players.length >= 2) return send(socket, 'error', { message: '房间已满，请选择其他棋局' }); if (room.id !== socket.roomId) detachSocket(socket); if (!room.players.includes(username)) room.players.push(username); socket.roomId = room.id; send(socket, 'room_state', roomState(room, socket)); broadcastRoom(room); broadcastRooms(); return }
+      if (message.type === 'leave_room') { detachSocket(socket); return }
       if (message.type === 'chat') { const room = rooms.get(socket.roomId); if (!room || !String(message.text || '').trim()) return; const chat = { id: Date.now(), name: username, text: String(message.text).slice(0, 300), time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }; room.messages.push(chat); room.messages = room.messages.slice(-80); broadcastRoom(room); return }
-      if (message.type === 'move') { const room = rooms.get(socket.roomId); if (!room || !room.players.includes(username)) return; const playerIndex = room.players.indexOf(username); const expected = playerIndex === 0 ? 'red' : 'black'; if (room.turn !== expected || !applyMove(room, Number(message.from), Number(message.to))) return send(socket, 'error', { message: '这一步不符合当前棋局规则' }); broadcastRoom(room) }
+      if (message.type === 'move') { const room = rooms.get(socket.roomId); if (!room || !room.players.includes(username)) return; if (room.players.length < 2) return send(socket, 'error', { message: '等待第二位玩家加入后才能开始' }); if (room.winner) return send(socket, 'error', { message: '棋局已经结束' }); const playerIndex = room.players.indexOf(username); const expected = playerIndex === 0 ? 'red' : 'black'; if (room.turn !== expected || !applyMove(room, Number(message.from), Number(message.to))) return send(socket, 'error', { message: '这一步不符合当前棋局规则' }); if (room.game === '国际象棋') { const other = room.turn; const king = chessKingIndex(room.board, other); if (king >= 0 && chessAttacked(room.board, king, room.turn === 'red' ? 'black' : 'red')) room.check = other } broadcastRoom(room) }
     } catch { send(socket, 'error', { message: '请求格式无效' }) }
   })
-  socket.on('close', () => { sockets.delete(socket); if (socket.roomId) { const room = rooms.get(socket.roomId); if (room) { room.players = room.players.filter((player) => player !== socket.username); broadcastRoom(room); broadcastRooms() } } sessions.delete(socket.sessionToken) })
+  socket.on('close', () => { sockets.delete(socket); detachSocket(socket); sessions.delete(socket.sessionToken) })
 })
 httpServer.listen(port, '0.0.0.0', () => console.log(`棋间 WebSocket server listening on :${port}`))
