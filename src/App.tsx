@@ -60,7 +60,8 @@ function App() {
   const selectRoom = (room: Room) => room.password ? setJoinRoom(room) : send({ type: 'join_room', roomId: room.id })
   const enterRoom = () => { if (joinRoom) send({ type: 'join_room', roomId: joinRoom.id, password: roomPassword }); setJoinRoom(null); setRoomPassword('') }
   const sendChat = () => { if (!chatText.trim()) return; send({ type: 'chat', text: chatText.trim() }); setChatText('') }
-  const playSquare = (index: number) => { if (!activeRoom || activeRoom.winner || !role || role !== turn) return; if (isPlacementGame) send({ type: 'move', roomId: activeRoom.id, from: -1, to: index }); else if (selected === null) setSelected(index); else { send({ type: 'move', roomId: activeRoom.id, from: selected, to: index }); setSelected(null) } }
+  const ownsPiece = (piece: string | null) => { if (!piece) return false; return currentGame === '国际象棋' ? (role === 'red' ? piece === piece.toUpperCase() : piece === piece.toLowerCase()) : role === 'red' ? '車馬相仕帥炮兵'.includes(piece) : '车马象士将炮卒'.includes(piece) }
+  const playSquare = (index: number) => { if (!activeRoom || activeRoom.winner || !role || role !== turn) return; if (isPlacementGame) send({ type: 'move', roomId: activeRoom.id, from: -1, to: index }); else if (selected === null) { if (ownsPiece(board[index])) setSelected(index); else setError('请先选择自己的棋子') } else { send({ type: 'move', roomId: activeRoom.id, from: selected, to: index }); setSelected(null) } }
   const displayedPiece = (piece: string | null) => currentGame === '国际象棋' ? (piece ? chessPieces[piece] : null) : currentGame === '中国象棋' ? (piece ? xiangqiPieces[piece] : null) : null
   const turnName = turn === 'red' ? (currentGame === '国际象棋' ? '白方' : '红方') : '黑方'
   const roleName = role === 'red' ? (currentGame === '国际象棋' ? '白方' : '红方') : role === 'black' ? '黑方' : '观战'

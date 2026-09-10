@@ -65,7 +65,13 @@ function validXiangqi(board, from, to, turn) {
     return !board[legY * 9 + legX]
   }
   if (kind === '车') return (dx === 0 || dy === 0) && pathClear(board, fx, fy, tx, ty, 9)
-  if (kind === '炮') { const between = []; const sx = Math.sign(dx), sy = Math.sign(dy); let x = fx + sx, y = fy + sy; while (x !== tx || y !== ty) { between.push(board[y * 9 + x]); x += sx; y += sy }; return (dx === 0 || dy === 0) && (target ? between.filter(Boolean).length === 1 : between.filter(Boolean).length === 0) }
+  if (kind === '炮') {
+    if (dx !== 0 && dy !== 0) return false
+    const between = [], sx = Math.sign(dx), sy = Math.sign(dy)
+    let x = fx + sx, y = fy + sy
+    while (x !== tx || y !== ty) { between.push(board[y * 9 + x]); x += sx; y += sy }
+    return target ? between.filter(Boolean).length === 1 : between.filter(Boolean).length === 0
+  }
   if (kind === '将') return ax + ay === 1 && tx >= 3 && tx <= 5 && (turn === 'red' ? ty >= 7 : ty <= 2)
   if (kind === '象') return ax === 2 && ay === 2 && !board[(fy + dy / 2) * 9 + fx + dx / 2] && (turn === 'red' ? ty >= 5 : ty <= 4)
   if (kind === '士') return ax === 1 && ay === 1 && tx >= 3 && tx <= 5 && (turn === 'red' ? ty >= 7 : ty <= 2)
@@ -155,13 +161,14 @@ function applyMove(room, from, to) {
   room.turn = room.turn === 'red' ? 'black' : 'red'
   return true
 }
-function roomState(room, socket) { return { room: roomSummary(room), board: room.board, turn: room.turn, role: socket ? (room.players.indexOf(socket.username) === 0 ? 'red' : 'black') : '', players: room.players, messages: room.messages } }
+function roomState(room, socket) { return { room: roomSummary(room), board: room.board, turn: room.turn, role: socket?.playerRole || '', players: room.players, messages: room.messages } }
 function broadcastRoom(room) { for (const socket of sockets) if (socket.roomId === room.id) send(socket, 'room_state', roomState(room, socket)) }
 function broadcastRooms() { const payload = [...rooms.values()].map(roomSummary); for (const socket of sockets) send(socket, 'rooms', { rooms: payload }) }
 function detachSocket(socket) {
   if (!socket.roomId) return
   const room = rooms.get(socket.roomId)
   socket.roomId = null
+  socket.playerRole = ''
   if (!room) return
   room.players = room.players.filter((player) => player !== socket.username)
   broadcastRoom(room)
@@ -198,11 +205,11 @@ wss.on('connection', (socket) => {
       }
       const username = userFor(socket)
       if (!username) return send(socket, 'error', { message: '请先登录' })
-      if (message.type === 'create_room') { detachSocket(socket); const room = makeRoom(String(message.name || '无名棋局').slice(0, 30), message.game, String(message.password || ''), username); room.players.push(username); socket.roomId = room.id; send(socket, 'room_state', roomState(room, socket)); broadcastRooms(); return }
-      if (message.type === 'join_room') { const room = rooms.get(message.roomId); if (!room) return send(socket, 'error', { message: '房间不存在' }); if (room.passwordHash && room.passwordHash !== digest(String(message.password || ''))) return send(socket, 'error', { message: '房间暗号错误' }); if (!room.players.includes(username) && room.players.length >= 2) return send(socket, 'error', { message: '房间已满，请选择其他棋局' }); if (room.id !== socket.roomId) detachSocket(socket); if (!room.players.includes(username)) room.players.push(username); socket.roomId = room.id; send(socket, 'room_state', roomState(room, socket)); broadcastRoom(room); broadcastRooms(); return }
+      if (message.type === 'create_room') { detachSocket(socket); const room = makeRoom(String(message.name || '无名棋局').slice(0, 30), message.game, String(message.password || ''), username); room.players.push(username); socket.roomId = room.id; socket.playerRole = 'red'; send(socket, 'room_state', roomState(room, socket)); broadcastRooms(); return }
+      if (message.type === 'join_room') { const room = rooms.get(message.roomId); if (!room) return send(socket, 'error', { message: '房间不存在' }); if (room.passwordHash && room.passwordHash !== digest(String(message.password || ''))) return send(socket, 'error', { message: '房间暗号错误' }); if (room.id !== socket.roomId && room.players.includes(username)) return send(socket, 'error', { message: '该账号已经在这个房间中' }); if (!room.players.includes(username) && room.players.length >= 2) return send(socket, 'error', { message: '房间已满，请选择其他棋局' }); if (room.id !== socket.roomId) detachSocket(socket); if (!room.players.includes(username)) room.players.push(username); socket.roomId = room.id; socket.playerRole = room.players.indexOf(username) === 0 ? 'red' : 'black'; send(socket, 'room_state', roomState(room, socket)); broadcastRoom(room); broadcastRooms(); return }
       if (message.type === 'leave_room') { detachSocket(socket); return }
       if (message.type === 'chat') { const room = rooms.get(socket.roomId); if (!room || !String(message.text || '').trim()) return; const chat = { id: Date.now(), name: username, text: String(message.text).slice(0, 300), time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }; room.messages.push(chat); room.messages = room.messages.slice(-80); broadcastRoom(room); return }
-      if (message.type === 'move') { const room = rooms.get(socket.roomId); if (!room || !room.players.includes(username)) return; if (room.players.length < 2) return send(socket, 'error', { message: '等待第二位玩家加入后才能开始' }); if (room.winner) return send(socket, 'error', { message: '棋局已经结束' }); const playerIndex = room.players.indexOf(username); const expected = playerIndex === 0 ? 'red' : 'black'; if (room.turn !== expected || !applyMove(room, Number(message.from), Number(message.to))) return send(socket, 'error', { message: '这一步不符合当前棋局规则' }); if (room.game === '国际象棋') { const other = room.turn; const king = chessKingIndex(room.board, other); if (king >= 0 && chessAttacked(room.board, king, room.turn === 'red' ? 'black' : 'red')) room.check = other } broadcastRoom(room) }
+      if (message.type === 'move') { const room = rooms.get(socket.roomId); if (!room || !socket.playerRole || !room.players.includes(username)) return send(socket, 'error', { message: '你还没有获得本房间的玩家席位' }); if (room.players.length < 2) return send(socket, 'error', { message: '等待第二位玩家加入后才能开始' }); if (room.winner) return send(socket, 'error', { message: '棋局已经结束' }); if (room.turn !== socket.playerRole) return send(socket, 'error', { message: `现在轮到${room.turn === 'red' ? '红方' : '黑方'}` }); if (!applyMove(room, Number(message.from), Number(message.to))) return send(socket, 'error', { message: '这一步不符合当前棋局规则' }); if (room.game === '国际象棋') { const other = room.turn; const king = chessKingIndex(room.board, other); if (king >= 0 && chessAttacked(room.board, king, room.turn === 'red' ? 'black' : 'red')) room.check = other } broadcastRoom(room) }
     } catch { send(socket, 'error', { message: '请求格式无效' }) }
   })
   socket.on('close', () => { sockets.delete(socket); detachSocket(socket); sessions.delete(socket.sessionToken) })
