@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Copy, Crown, Gamepad2, KeyRound, MessageCircle, Plus, Send, Shield, Swords, Users, X } from 'lucide-react'
 import './App.css'
 
@@ -33,6 +33,7 @@ function App() {
   const [selected, setSelected] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const suppressClick = useRef(false)
 
   const send = (payload: Record<string, unknown>) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload)) }
   useEffect(() => {
@@ -61,11 +62,24 @@ function App() {
   const enterRoom = () => { if (joinRoom) send({ type: 'join_room', roomId: joinRoom.id, password: roomPassword }); setJoinRoom(null); setRoomPassword('') }
   const sendChat = () => { if (!chatText.trim()) return; send({ type: 'chat', text: chatText.trim() }); setChatText('') }
   const ownsPiece = (piece: string | null) => { if (!piece) return false; return currentGame === '国际象棋' ? (role === 'red' ? piece === piece.toUpperCase() : piece === piece.toLowerCase()) : role === 'red' ? '車馬相仕帥炮兵'.includes(piece) : '车马象士将炮卒'.includes(piece) }
-  const playSquare = (index: number) => { if (!activeRoom || activeRoom.winner || !role || role !== turn) return; if (isPlacementGame) send({ type: 'move', roomId: activeRoom.id, from: -1, to: index }); else if (selected === null) { if (ownsPiece(board[index])) setSelected(index); else setError('请先选择自己的棋子') } else { send({ type: 'move', roomId: activeRoom.id, from: selected, to: index }); setSelected(null) } }
+  const submitMove = (from: number, to: number) => { if (!activeRoom || activeRoom.winner || !role || role !== turn) return; send({ type: 'move', roomId: activeRoom.id, from, to }); setSelected(null) }
+  const playSquare = (index: number) => { if (suppressClick.current) { suppressClick.current = false; return }; if (!activeRoom || activeRoom.winner || !role || role !== turn) return; if (isPlacementGame) submitMove(-1, index); else if (selected === null) { if (ownsPiece(board[index])) setSelected(index); else setError('请先选择自己的棋子') } else submitMove(selected, index) }
   const displayedPiece = (piece: string | null) => currentGame === '国际象棋' ? (piece ? chessPieces[piece] : null) : currentGame === '中国象棋' ? (piece ? xiangqiPieces[piece] : null) : null
   const turnName = turn === 'red' ? (currentGame === '国际象棋' ? '白方' : '红方') : '黑方'
   const roleName = role === 'red' ? (currentGame === '国际象棋' ? '白方' : '红方') : role === 'black' ? '黑方' : '观战'
   const winnerName = activeRoom?.winner === 'red' ? (currentGame === '国际象棋' ? '白方' : '红方') : '黑方'
+
+  useEffect(() => {
+    const boardElement = document.querySelector('.board')
+    if (!boardElement || isPlacementGame || !activeRoom) return
+    let from: number | null = null
+    const squareIndex = (target: EventTarget | null) => { const square = (target as HTMLElement | null)?.closest('.square'); return square ? Array.from(boardElement.querySelectorAll('.square')).indexOf(square) : -1 }
+    const down = (event: Event) => { const index = squareIndex(event.target); if (index >= 0 && role === turn && ownsPiece(board[index])) { from = index; setSelected(index) } }
+    const up = (event: Event) => { if (from !== null) { const to = squareIndex(event.target); if (to >= 0 && to !== from) { suppressClick.current = true; submitMove(from, to) } from = null } }
+    boardElement.addEventListener('pointerdown', down)
+    boardElement.addEventListener('pointerup', up)
+    return () => { boardElement.removeEventListener('pointerdown', down); boardElement.removeEventListener('pointerup', up) }
+  }, [activeRoom, board, isPlacementGame, role, turn])
 
   return <div className="app-shell">
     <header className="topbar"><div className="brand"><div className="brand-mark"><Swords size={19} /></div><span>棋间</span><em>ONLINE CLUB</em></div><div className="connection"><span className={`live-dot ${connected ? '' : 'offline'}`} /> {connected ? '服务器在线' : '连接中'} <span className="divider" /><span className="avatar">{username.slice(0, 1).toUpperCase() || '?'}</span> {username || '访客'}</div></header>

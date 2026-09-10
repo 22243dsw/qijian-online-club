@@ -45,6 +45,7 @@ function validChess(board, from, to, turn) {
   if (!piece || (turn === 'red' && piece !== piece.toUpperCase()) || (turn === 'black' && piece !== piece.toLowerCase())) return false
   const dx = tx - fx, dy = ty - fy, ax = Math.abs(dx), ay = Math.abs(dy), target = board[to]
   if (target && ((turn === 'red' && target === target.toUpperCase()) || (turn === 'black' && target === target.toLowerCase()))) return false
+  if (target?.toLowerCase() === 'k') return false
   if (piece.toLowerCase() === 'p') return turn === 'red' ? (dy === -1 && ax === 0) || (fy === 6 && dy === -2 && ax === 0 && !target && !board[from - 8]) || (dy === -1 && ax === 1 && target) : (dy === 1 && ax === 0) || (fy === 1 && dy === 2 && ax === 0 && !target && !board[from + 8]) || (dy === 1 && ax === 1 && target)
   if (piece.toLowerCase() === 'n') return (ax === 1 && ay === 2) || (ax === 2 && ay === 1)
   if (piece.toLowerCase() === 'k') return ax <= 1 && ay <= 1 && (ax + ay > 0)
@@ -118,6 +119,29 @@ function legalXiangqiMove(board, from, to, turn) {
   next[from] = null
   return !xiangqiInCheck(next, turn)
 }
+function hasAnyChessMove(board, turn) {
+  return board.some((piece, from) => piece && (turn === 'red' ? piece === piece.toUpperCase() : piece === piece.toLowerCase()) && board.some((_, to) => legalChessMove(board, from, to, turn)))
+}
+function hasAnyXiangqiMove(board, turn) {
+  return board.some((piece, from) => piece && (turn === 'red' ? redXiangqi.has(piece) : blackXiangqi.has(piece)) && board.some((_, to) => legalXiangqiMove(board, from, to, turn)))
+}
+function updateWinner(room, movingTurn) {
+  const nextTurn = room.turn
+  if (room.game === '国际象棋') {
+    const king = chessKingIndex(room.board, nextTurn)
+    const checked = king >= 0 && chessAttacked(room.board, king, movingTurn)
+    if (king < 0 || (checked && !hasAnyChessMove(room.board, nextTurn))) room.winner = movingTurn
+    else if (!checked && !hasAnyChessMove(room.board, nextTurn)) room.winner = 'draw'
+    room.check = checked ? nextTurn : ''
+  }
+  if (room.game === '中国象棋') {
+    const king = xiangqiGeneralIndex(room.board, nextTurn)
+    const checked = king < 0 || xiangqiInCheck(room.board, nextTurn)
+    if (king < 0 || (checked && !hasAnyXiangqiMove(room.board, nextTurn))) room.winner = movingTurn
+    else if (!checked && !hasAnyXiangqiMove(room.board, nextTurn)) room.winner = 'draw'
+    room.check = checked ? nextTurn : ''
+  }
+}
 const neighbors = (index, size) => { const x = index % size, y = Math.floor(index / size); return [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([nx, ny]) => nx >= 0 && nx < size && ny >= 0 && ny < size).map(([nx, ny]) => ny * size + nx) }
 function group(board, start, size) { const color = board[start], found = new Set([start]), stack = [start]; while (stack.length) for (const next of neighbors(stack.pop(), size)) if (board[next] === color && !found.has(next)) { found.add(next); stack.push(next) }; return found }
 function hasLiberty(board, stones, size) { return [...stones].some((stone) => neighbors(stone, size).some((next) => !board[next])) }
@@ -156,9 +180,11 @@ function applyMove(room, from, to) {
   if (room.game === '五子棋') return applyGomoku(room, to)
   const valid = room.game === '国际象棋' ? legalChessMove(room.board, from, to, room.turn) : legalXiangqiMove(room.board, from, to, room.turn)
   if (!valid) return false
+  const movingTurn = room.turn
   room.board[to] = room.board[from]; room.board[from] = null
   if (room.game === '国际象棋' && room.board[to].toLowerCase() === 'p' && Math.floor(to / 8) === (room.turn === 'red' ? 0 : 7)) room.board[to] = room.turn === 'red' ? 'Q' : 'q'
   room.turn = room.turn === 'red' ? 'black' : 'red'
+  updateWinner(room, movingTurn)
   return true
 }
 function roomState(room, socket) { return { room: roomSummary(room), board: room.board, turn: room.turn, role: socket?.playerRole || '', players: room.players, messages: room.messages } }

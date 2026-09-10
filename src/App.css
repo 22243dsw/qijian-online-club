@@ -17,3 +17,12 @@
 .xiangqi-board .square:nth-child(41)::after{content:'楚 河       汉 界';position:absolute;left:calc(100% + 4px);width:790%;color:#765535;font:600 clamp(8px,1.8vw,17px)/1 Georgia,serif;white-space:pre;pointer-events:none}
 .go-board,.gomoku-board{touch-action:manipulation}
 @media(max-width:720px){.xiangqi-board .square:nth-child(41)::after{font-size:8px;left:calc(100% + 1px)}}
+.chess-board{border:8px solid #3a251b;background-color:#d8b77e;background-image:linear-gradient(45deg,#f0d7a1 25%,transparent 25%,transparent 75%,#f0d7a1 75%),linear-gradient(45deg,#f0d7a1 25%,transparent 25%,transparent 75%,#f0d7a1 75%);background-position:0 0,calc(100% / 8) calc(100% / 8);background-size:calc(200% / 8) calc(200% / 8);box-shadow:0 20px 42px #0009,0 0 0 1px #f2d49b88}
+.chess-board .square{background:transparent!important}
+.chess-board .piece{font-family:Georgia,'Times New Roman',serif;font-size:clamp(25px,5.3vw,47px);line-height:1;color:#f7ead0;text-shadow:0 2px 0 #3b2418,1px 0 0 #3b2418,-1px 0 0 #3b2418,0 -1px 0 #3b2418,2px 3px 3px #3b241899;transform:translateY(-2px)}
+.chess-board .piece::after{content:'';position:absolute;width:58%;height:12%;border-radius:50%;background:#57352266;bottom:11%;left:21%;z-index:-1}
+.xiangqi-board{border:9px solid #5b351e;background-color:#d9ad6c;background-image:linear-gradient(#744823aa 1px,transparent 1px),linear-gradient(90deg,#744823aa 1px,transparent 1px);background-size:11.111% 10%;box-shadow:0 20px 42px #0009,0 0 0 1px #edca8b66}
+.xiangqi-board .square{background:transparent!important}
+.xiangqi-board .cn-piece{width:76%;height:76%;font-family:'Songti SC','STKaiti',serif;font-weight:700;color:#322015;background:radial-gradient(circle at 34% 28%,#f2d99b,#bb7c43 72%);border:2px solid #60351f;box-shadow:inset 0 0 0 2px #e4b67888,2px 3px 3px #4a261888;transform:translateY(-1px)}
+.xiangqi-board .square-selected .cn-piece{box-shadow:inset 0 0 0 3px #fff0a8,0 0 0 3px #f9e58b88,2px 3px 3px #4a261888}
+.piece{position:relative;user-select:none;pointer-events:none;cursor:grab}.square{touch-action:none}.square:active .piece{cursor:grabbing}.square-selected{background:#ffe36a66!important;box-shadow:inset 0 0 0 2px #fff0a8}
